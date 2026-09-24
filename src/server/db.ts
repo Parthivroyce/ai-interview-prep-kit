@@ -14,7 +14,7 @@ export interface UserDoc {
 
 export interface KitDoc extends AppendixAKit {
   _id: string;
-  userId: string;
+  userId?: string;
   fingerprint: string;
   generation: GenerationProgress;
   createdAt: string;
@@ -32,16 +32,16 @@ export interface DatabaseStore {
     insert(doc: Omit<UserDoc, "_id">): Promise<UserDoc>;
   };
   kits: {
-    findByUser(userId: string): Promise<KitDoc[]>;
-    findById(id: string, userId: string): Promise<KitDoc | null>;
-    findByFingerprint(userId: string, fingerprint: string): Promise<KitDoc | null>;
+    findByUser(userId?: string): Promise<KitDoc[]>;
+    findById(id: string, userId?: string): Promise<KitDoc | null>;
+    findByFingerprint(fingerprint: string, userId?: string): Promise<KitDoc | null>;
     insert(doc: Omit<KitDoc, "_id">): Promise<KitDoc>;
-    update(id: string, userId: string, update: Partial<KitDoc>): Promise<KitDoc | null>;
-    delete(id: string, userId: string): Promise<boolean>;
+    update(id: string, update: Partial<KitDoc>, userId?: string): Promise<KitDoc | null>;
+    delete(id: string, userId?: string): Promise<boolean>;
   };
   practice: {
     recordReview(review: Omit<PracticeReviewDoc, "_id">): Promise<PracticeReviewDoc>;
-    getReviewsByKit(kitId: string, userId: string): Promise<PracticeReviewDoc[]>;
+    getReviewsByKit(kitId: string, userId?: string): Promise<PracticeReviewDoc[]>;
   };
 }
 
@@ -65,25 +65,42 @@ class MemoryStore implements DatabaseStore {
   };
 
   public kits = {
-    findByUser: async (userId: string) => {
+    findByUser: async (userId?: string) => {
+      if (userId) {
+        return this.kitList
+          .filter(k => k.userId === userId || !k.userId)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      }
       return this.kitList
-        .filter(k => k.userId === userId)
+        .slice()
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
-    findById: async (id: string, userId: string) => {
-      return this.kitList.find(k => k._id === id && k.userId === userId) || null;
+    findById: async (id: string, userId?: string) => {
+      const kit = this.kitList.find(k => k._id === id);
+      if (!kit) return null;
+      if (kit.userId && userId && kit.userId !== userId) {
+        return null;
+      }
+      return kit;
     },
-    findByFingerprint: async (userId: string, fingerprint: string) => {
-      return this.kitList.find(k => k.userId === userId && k.fingerprint === fingerprint) || null;
+    findByFingerprint: async (fingerprint: string, userId?: string) => {
+      if (userId) {
+        return this.kitList.find(k => (k.userId === userId || !k.userId) && k.fingerprint === fingerprint) || null;
+      }
+      return this.kitList.find(k => k.fingerprint === fingerprint) || null;
     },
     insert: async (doc: Omit<KitDoc, "_id">) => {
       const kit: KitDoc = { ...doc, _id: crypto.randomUUID() };
       this.kitList.push(kit);
       return kit;
     },
-    update: async (id: string, userId: string, update: Partial<KitDoc>) => {
-      const index = this.kitList.findIndex(k => k._id === id && k.userId === userId);
+    update: async (id: string, update: Partial<KitDoc>, userId?: string) => {
+      const index = this.kitList.findIndex(k => k._id === id);
       if (index === -1) return null;
+      const kit = this.kitList[index];
+      if (kit.userId && userId && kit.userId !== userId) {
+        return null;
+      }
       this.kitList[index] = {
         ...this.kitList[index],
         ...update,
@@ -91,9 +108,13 @@ class MemoryStore implements DatabaseStore {
       };
       return this.kitList[index];
     },
-    delete: async (id: string, userId: string) => {
-      const index = this.kitList.findIndex(k => k._id === id && k.userId === userId);
+    delete: async (id: string, userId?: string) => {
+      const index = this.kitList.findIndex(k => k._id === id);
       if (index === -1) return false;
+      const kit = this.kitList[index];
+      if (kit.userId && userId && kit.userId !== userId) {
+        return false;
+      }
       this.kitList.splice(index, 1);
       return true;
     },
@@ -108,8 +129,11 @@ class MemoryStore implements DatabaseStore {
       this.reviewList.push(item);
       return item;
     },
-    getReviewsByKit: async (kitId: string, userId: string) => {
-      return this.reviewList.filter(r => r.kitId === kitId && r.userId === userId);
+    getReviewsByKit: async (kitId: string, userId?: string) => {
+      if (userId) {
+        return this.reviewList.filter(r => r.kitId === kitId && (r.userId === userId || !r.userId));
+      }
+      return this.reviewList.filter(r => r.kitId === kitId);
     },
   };
 }
@@ -134,20 +158,31 @@ class MongoDbStore implements DatabaseStore {
   };
 
   public kits = {
-    findByUser: async (userId: string) => {
+    findByUser: async (userId?: string) => {
+      const filter = userId
+        ? { $or: [{ userId }, { userId: { $exists: false } }, { userId: null }] }
+        : {};
       const cursor = this.db
         .collection<KitDoc>("kits")
-        .find({ userId })
+        .find(filter as any)
         .sort({ createdAt: -1 });
       const docs = await cursor.toArray();
       return docs.map(d => ({ ...d, _id: d._id.toString() }));
     },
-    findById: async (id: string, userId: string) => {
-      const doc = await this.db.collection<KitDoc>("kits").findOne({ _id: id as any, userId });
-      return doc ? { ...doc, _id: doc._id.toString() } : null;
+    findById: async (id: string, userId?: string) => {
+      const doc = await this.db.collection<KitDoc>("kits").findOne({ _id: id as any });
+      if (!doc) return null;
+      if (doc.userId && userId && doc.userId !== userId) {
+        return null;
+      }
+      return { ...doc, _id: doc._id.toString() };
     },
-    findByFingerprint: async (userId: string, fingerprint: string) => {
-      const doc = await this.db.collection<KitDoc>("kits").findOne({ userId, fingerprint });
+    findByFingerprint: async (fingerprint: string, userId?: string) => {
+      const filter: any = { fingerprint };
+      if (userId) {
+        filter.$or = [{ userId }, { userId: { $exists: false } }, { userId: null }];
+      }
+      const doc = await this.db.collection<KitDoc>("kits").findOne(filter);
       return doc ? { ...doc, _id: doc._id.toString() } : null;
     },
     insert: async (doc: Omit<KitDoc, "_id">) => {
@@ -155,16 +190,26 @@ class MongoDbStore implements DatabaseStore {
       await this.db.collection("kits").insertOne(kit as any);
       return kit;
     },
-    update: async (id: string, userId: string, update: Partial<KitDoc>) => {
+    update: async (id: string, update: Partial<KitDoc>, userId?: string) => {
+      const doc = await this.db.collection<KitDoc>("kits").findOne({ _id: id as any });
+      if (!doc) return null;
+      if (doc.userId && userId && doc.userId !== userId) {
+        return null;
+      }
       const updated = await this.db.collection<KitDoc>("kits").findOneAndUpdate(
-        { _id: id as any, userId },
+        { _id: id as any },
         { $set: { ...update, updatedAt: new Date().toISOString() } },
         { returnDocument: "after" }
       );
       return updated ? ({ ...updated, _id: updated._id.toString() } as KitDoc) : null;
     },
-    delete: async (id: string, userId: string) => {
-      const res = await this.db.collection("kits").deleteOne({ _id: id as any, userId });
+    delete: async (id: string, userId?: string) => {
+      const doc = await this.db.collection<KitDoc>("kits").findOne({ _id: id as any });
+      if (!doc) return false;
+      if (doc.userId && userId && doc.userId !== userId) {
+        return false;
+      }
+      const res = await this.db.collection("kits").deleteOne({ _id: id as any });
       return (res.deletedCount ?? 0) > 0;
     },
   };
@@ -175,8 +220,12 @@ class MongoDbStore implements DatabaseStore {
       await this.db.collection("practice_reviews").insertOne(doc as any);
       return doc;
     },
-    getReviewsByKit: async (kitId: string, userId: string) => {
-      const cursor = this.db.collection<PracticeReviewDoc>("practice_reviews").find({ kitId, userId });
+    getReviewsByKit: async (kitId: string, userId?: string) => {
+      const filter: any = { kitId };
+      if (userId) {
+        filter.$or = [{ userId }, { userId: { $exists: false } }, { userId: null }];
+      }
+      const cursor = this.db.collection<PracticeReviewDoc>("practice_reviews").find(filter);
       const docs = await cursor.toArray();
       return docs.map(d => ({ ...d, _id: d._id.toString() }));
     },

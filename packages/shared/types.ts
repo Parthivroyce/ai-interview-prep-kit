@@ -99,7 +99,7 @@ export interface GenerationProgress {
 
 export interface StoredKit extends AppendixAKit {
   _id: string;
-  userId: string;
+  userId?: string;
   fingerprint: string;
   generation: GenerationProgress;
   createdAt: string;
@@ -108,7 +108,7 @@ export interface StoredKit extends AppendixAKit {
 
 export interface PracticeReview {
   id: string;
-  userId: string;
+  userId?: string;
   kitId: string;
   cardId: string;
   confidence: number; // 1 to 5

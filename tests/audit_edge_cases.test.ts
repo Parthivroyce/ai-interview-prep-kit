@@ -83,7 +83,26 @@ export async function runAuditEdgeCasesTests(): Promise<void> {
   const accessedByUserA = await db.kits.findById(kitA._id, userA._id);
   assert.ok(accessedByUserA !== null, "User A must access their own kit");
   assert.equal(accessedByUserA?._id, kitA._id);
-  console.log("  ✓ User isolation audit passes: Cross-user kit access strictly prevented");
+
+  // Unauthenticated kit test (kit created without session)
+  const unauthKit = await db.kits.insert({
+    fingerprint: "fp_unauth",
+    source: { company: "Open Corp", company_url: "https://open.com", role: "Dev", location: "", jd_chars: 10, researched_at: "", pages_used: [] },
+    company_brief: { summary: "", what_they_do: "", sources: [] },
+    role: { title: "Dev", seniority: "Mid", responsibilities: [], requirements: [] },
+    questions: [],
+    flashcards: [],
+    schedule: { days_available: 5, days: [] },
+    coverage: { uncovered_requirement_ids: [], passes: 1 },
+    generation: { status: "completed", step: "Ready", progress: 100, errors: [] },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  const fetchedUnauth = await db.kits.findById(unauthKit._id);
+  assert.ok(fetchedUnauth !== null, "Unauthenticated kit must be retrievable without a session");
+  assert.equal(fetchedUnauth?._id, unauthKit._id);
+
+  console.log("  ✓ User isolation and unauthenticated kit flow passes");
 
   // 4. SCHEDULER MUST-HAVE REQUIREMENT COVERAGE AUDIT
   const reqs: Requirement[] = [

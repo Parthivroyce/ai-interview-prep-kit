@@ -8,7 +8,7 @@ import {
   invalidateSession,
   setSessionCookie,
   clearSessionCookie,
-  requireAuth,
+  optionalAuth,
 } from "./auth";
 import {
   registerRequestSchema,
@@ -109,23 +109,23 @@ apiRouter.post("/auth/logout", (req: Request, res: Response) => {
   res.json({ success: true, message: "Logged out successfully" });
 });
 
-apiRouter.get("/auth/me", requireAuth, (req: Request, res: Response) => {
-  res.json({ user: req.user });
+apiRouter.get("/auth/me", optionalAuth, (req: Request, res: Response) => {
+  res.json({ user: req.user || null });
 });
 
 // ----------------------------------------------------
 // KITS MANAGEMENT
 // ----------------------------------------------------
 
-// List all kits for the authenticated user
-apiRouter.get("/kits", requireAuth, async (req: Request, res: Response) => {
+// List all kits for the authenticated or public user
+apiRouter.get("/kits", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kits = await db.kits.findByUser(req.user!.id);
+  const kits = await db.kits.findByUser(req.user?.id);
   res.json({ kits });
 });
 
 // Create a new kit (async generation)
-apiRouter.post("/kits", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits", optionalAuth, async (req: Request, res: Response) => {
   const parse = createKitRequestSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -133,12 +133,12 @@ apiRouter.post("/kits", requireAuth, async (req: Request, res: Response) => {
   }
 
   const { jd, company_url, days } = parse.data;
-  const userId = req.user!.id;
+  const userId = req.user?.id;
   const fingerprint = computeKitFingerprint(jd, company_url);
   const db = await getDbStore();
 
   // Duplicate detection
-  const duplicate = await db.kits.findByFingerprint(userId, fingerprint);
+  const duplicate = await db.kits.findByFingerprint(fingerprint, userId);
   if (duplicate && duplicate.generation.status === "completed") {
     res.status(200).json({
       duplicate: true,
@@ -205,13 +205,13 @@ apiRouter.post("/kits", requireAuth, async (req: Request, res: Response) => {
         days,
         allowLocal: process.env.NODE_ENV !== "production" || process.env.ALLOW_LOCAL_URLS === "true",
         onProgress: async (p) => {
-          await db.kits.update(initialKit._id, userId, {
+          await db.kits.update(initialKit._id, {
             generation: p,
-          });
+          }, userId);
         },
       });
 
-      await db.kits.update(initialKit._id, userId, {
+      await db.kits.update(initialKit._id, {
         ...result.kit,
         generation: {
           status: "completed",
@@ -219,16 +219,16 @@ apiRouter.post("/kits", requireAuth, async (req: Request, res: Response) => {
           progress: 100,
           errors: result.errors,
         },
-      });
+      }, userId);
     } catch (err: any) {
-      await db.kits.update(initialKit._id, userId, {
+      await db.kits.update(initialKit._id, {
         generation: {
           status: "failed",
           step: "Generation failed",
           progress: 100,
           errors: [err.message || "An unexpected error occurred during generation."],
         },
-      });
+      }, userId);
     }
   })().catch(console.error);
 
@@ -240,9 +240,9 @@ apiRouter.post("/kits", requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get a specific kit
-apiRouter.get("/kits/:id", requireAuth, async (req: Request, res: Response) => {
+apiRouter.get("/kits/:id", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -251,9 +251,9 @@ apiRouter.get("/kits/:id", requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get generation progress/status
-apiRouter.get("/kits/:id/status", requireAuth, async (req: Request, res: Response) => {
+apiRouter.get("/kits/:id/status", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -262,9 +262,9 @@ apiRouter.get("/kits/:id/status", requireAuth, async (req: Request, res: Respons
 });
 
 // Update kit top-level fields (e.g. edited company brief or role)
-apiRouter.patch("/kits/:id", requireAuth, async (req: Request, res: Response) => {
+apiRouter.patch("/kits/:id", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -289,14 +289,14 @@ apiRouter.patch("/kits/:id", requireAuth, async (req: Request, res: Response) =>
     };
   }
 
-  const updated = await db.kits.update(kit._id, req.user!.id, updateData);
+  const updated = await db.kits.update(kit._id, updateData, req.user?.id);
   res.json({ kit: updated });
 });
 
 // Delete kit
-apiRouter.delete("/kits/:id", requireAuth, async (req: Request, res: Response) => {
+apiRouter.delete("/kits/:id", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const deleted = await db.kits.delete(req.params.id, req.user!.id);
+  const deleted = await db.kits.delete(req.params.id, req.user?.id);
   if (!deleted) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -309,9 +309,9 @@ apiRouter.delete("/kits/:id", requireAuth, async (req: Request, res: Response) =
 // ----------------------------------------------------
 
 // Regenerate company brief
-apiRouter.post("/kits/:id/regenerate/company", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/regenerate/company", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -322,18 +322,18 @@ apiRouter.post("/kits/:id/regenerate/company", requireAuth, async (req: Request,
   const crawl = await crawler.crawl(kit.source.company_url);
   const newBrief = await generateCompanyBrief(kit.source.company_url, crawl.pages, "", llm);
 
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     company_brief: {
       ...newBrief,
       _meta: { origin: "generated", edited: false, pinned: kit.company_brief._meta?.pinned || false },
     },
-  });
+  }, req.user?.id);
 
   res.json({ kit: updated });
 });
 
 // Regenerate questions for a specific category (preserving user edits & pinned)
-apiRouter.post("/kits/:id/regenerate/questions/:category", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/regenerate/questions/:category", optionalAuth, async (req: Request, res: Response) => {
   const category = req.params.category as QuestionCategory;
   if (!["technical", "behavioural", "system-design", "company-fit"].includes(category)) {
     res.status(400).json({ error: "Invalid question category" });
@@ -341,7 +341,7 @@ apiRouter.post("/kits/:id/regenerate/questions/:category", requireAuth, async (r
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -364,14 +364,14 @@ apiRouter.post("/kits/:id/regenerate/questions/:category", requireAuth, async (r
     questions: mergedQuestions,
   });
 
-  const updated = await db.kits.update(kit._id, req.user!.id, updatedKitWithRecalc);
+  const updated = await db.kits.update(kit._id, updatedKitWithRecalc, req.user?.id);
   res.json({ kit: updated });
 });
 
 // Regenerate schedule (preserves questions)
-apiRouter.post("/kits/:id/regenerate/schedule", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/regenerate/schedule", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -380,9 +380,9 @@ apiRouter.post("/kits/:id/regenerate/schedule", requireAuth, async (req: Request
   const daysRequested = req.body.days ? Number(req.body.days) : kit.schedule.days_available;
   const newSchedule = generateDeterministicSchedule(kit.role.requirements, kit.questions, daysRequested);
 
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     schedule: newSchedule,
-  });
+  }, req.user?.id);
 
   res.json({ kit: updated });
 });
@@ -392,7 +392,7 @@ apiRouter.post("/kits/:id/regenerate/schedule", requireAuth, async (req: Request
 // ----------------------------------------------------
 
 // Add manual question
-apiRouter.post("/kits/:id/questions", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/questions", optionalAuth, async (req: Request, res: Response) => {
   const parse = createQuestionSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -400,7 +400,7 @@ apiRouter.post("/kits/:id/questions", requireAuth, async (req: Request, res: Res
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -421,12 +421,12 @@ apiRouter.post("/kits/:id/questions", requireAuth, async (req: Request, res: Res
     questions: [...kit.questions, newQuestion],
   });
 
-  const updated = await db.kits.update(kit._id, req.user!.id, updatedKitWithRecalc);
+  const updated = await db.kits.update(kit._id, updatedKitWithRecalc, req.user?.id);
   res.status(201).json({ kit: updated, question: newQuestion });
 });
 
 // Edit question
-apiRouter.patch("/kits/:id/questions/:questionId", requireAuth, async (req: Request, res: Response) => {
+apiRouter.patch("/kits/:id/questions/:questionId", optionalAuth, async (req: Request, res: Response) => {
   const parse = updateQuestionSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -434,7 +434,7 @@ apiRouter.patch("/kits/:id/questions/:questionId", requireAuth, async (req: Requ
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -466,14 +466,14 @@ apiRouter.patch("/kits/:id/questions/:questionId", requireAuth, async (req: Requ
     questions: updatedQuestions,
   });
 
-  const updated = await db.kits.update(kit._id, req.user!.id, updatedKitWithRecalc);
+  const updated = await db.kits.update(kit._id, updatedKitWithRecalc, req.user?.id);
   res.json({ kit: updated, question: updatedQuestions[questionIndex] });
 });
 
 // Delete question
-apiRouter.delete("/kits/:id/questions/:questionId", requireAuth, async (req: Request, res: Response) => {
+apiRouter.delete("/kits/:id/questions/:questionId", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -485,12 +485,12 @@ apiRouter.delete("/kits/:id/questions/:questionId", requireAuth, async (req: Req
     questions: filteredQuestions,
   });
 
-  const updated = await db.kits.update(kit._id, req.user!.id, updatedKitWithRecalc);
+  const updated = await db.kits.update(kit._id, updatedKitWithRecalc, req.user?.id);
   res.json({ kit: updated, message: "Question deleted" });
 });
 
 // Reorder questions
-apiRouter.put("/kits/:id/questions/reorder", requireAuth, async (req: Request, res: Response) => {
+apiRouter.put("/kits/:id/questions/reorder", optionalAuth, async (req: Request, res: Response) => {
   const { question_ids } = req.body;
   if (!Array.isArray(question_ids)) {
     res.status(400).json({ error: "question_ids must be an array" });
@@ -498,7 +498,7 @@ apiRouter.put("/kits/:id/questions/reorder", requireAuth, async (req: Request, r
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -519,9 +519,9 @@ apiRouter.put("/kits/:id/questions/reorder", requireAuth, async (req: Request, r
     reordered.push(remaining);
   }
 
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     questions: reordered,
-  });
+  }, req.user?.id);
 
   res.json({ kit: updated });
 });
@@ -530,7 +530,7 @@ apiRouter.put("/kits/:id/questions/reorder", requireAuth, async (req: Request, r
 // FLASHCARDS CRUD
 // ----------------------------------------------------
 
-apiRouter.post("/kits/:id/flashcards", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/flashcards", optionalAuth, async (req: Request, res: Response) => {
   const parse = createFlashcardSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -538,7 +538,7 @@ apiRouter.post("/kits/:id/flashcards", requireAuth, async (req: Request, res: Re
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -552,14 +552,14 @@ apiRouter.post("/kits/:id/flashcards", requireAuth, async (req: Request, res: Re
     _meta: { origin: "manual" as const, edited: false, pinned: false },
   };
 
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     flashcards: [...kit.flashcards, newFlashcard],
-  });
+  }, req.user?.id);
 
   res.status(201).json({ kit: updated, flashcard: newFlashcard });
 });
 
-apiRouter.patch("/kits/:id/flashcards/:flashcardId", requireAuth, async (req: Request, res: Response) => {
+apiRouter.patch("/kits/:id/flashcards/:flashcardId", optionalAuth, async (req: Request, res: Response) => {
   const parse = updateFlashcardSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -567,7 +567,7 @@ apiRouter.patch("/kits/:id/flashcards/:flashcardId", requireAuth, async (req: Re
   }
 
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -591,25 +591,25 @@ apiRouter.patch("/kits/:id/flashcards/:flashcardId", requireAuth, async (req: Re
     },
   };
 
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     flashcards: updatedFlashcards,
-  });
+  }, req.user?.id);
 
   res.json({ kit: updated, flashcard: updatedFlashcards[idx] });
 });
 
-apiRouter.delete("/kits/:id/flashcards/:flashcardId", requireAuth, async (req: Request, res: Response) => {
+apiRouter.delete("/kits/:id/flashcards/:flashcardId", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
   }
 
   const filtered = kit.flashcards.filter(f => f.id !== req.params.flashcardId);
-  const updated = await db.kits.update(kit._id, req.user!.id, {
+  const updated = await db.kits.update(kit._id, {
     flashcards: filtered,
-  });
+  }, req.user?.id);
 
   res.json({ kit: updated, message: "Flashcard deleted" });
 });
@@ -619,7 +619,7 @@ apiRouter.delete("/kits/:id/flashcards/:flashcardId", requireAuth, async (req: R
 // ----------------------------------------------------
 
 // Record practice review
-apiRouter.post("/kits/:id/practice", requireAuth, async (req: Request, res: Response) => {
+apiRouter.post("/kits/:id/practice", optionalAuth, async (req: Request, res: Response) => {
   const parse = recordPracticeReviewSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: parse.error.issues[0].message });
@@ -629,7 +629,7 @@ apiRouter.post("/kits/:id/practice", requireAuth, async (req: Request, res: Resp
   const { cardId, confidence } = parse.data;
   const db = await getDbStore();
 
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
@@ -643,7 +643,7 @@ apiRouter.post("/kits/:id/practice", requireAuth, async (req: Request, res: Resp
 
   const review = await db.practice.recordReview({
     id: crypto.randomUUID(),
-    userId: req.user!.id,
+    userId: req.user?.id,
     kitId: kit._id,
     cardId,
     confidence,
@@ -654,22 +654,22 @@ apiRouter.post("/kits/:id/practice", requireAuth, async (req: Request, res: Resp
 });
 
 // Get practice reviews
-apiRouter.get("/kits/:id/practice", requireAuth, async (req: Request, res: Response) => {
+apiRouter.get("/kits/:id/practice", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const reviews = await db.practice.getReviewsByKit(req.params.id, req.user!.id);
+  const reviews = await db.practice.getReviewsByKit(req.params.id, req.user?.id);
   res.json({ reviews });
 });
 
 // Weak Spots Report
-apiRouter.get("/kits/:id/weak-spots", requireAuth, async (req: Request, res: Response) => {
+apiRouter.get("/kits/:id/weak-spots", optionalAuth, async (req: Request, res: Response) => {
   const db = await getDbStore();
-  const kit = await db.kits.findById(req.params.id, req.user!.id);
+  const kit = await db.kits.findById(req.params.id, req.user?.id);
   if (!kit) {
     res.status(404).json({ error: "Kit not found" });
     return;
   }
 
-  const reviews = await db.practice.getReviewsByKit(kit._id, req.user!.id);
+  const reviews = await db.practice.getReviewsByKit(kit._id, req.user?.id);
 
   // Group latest review confidence by card
   const latestConfidenceByCard = new Map<string, number>();

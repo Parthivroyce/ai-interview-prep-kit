@@ -90,3 +90,40 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   next();
 }
+
+export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const token = req.cookies?.[SESSION_COOKIE_NAME] || req.headers.authorization?.replace(/^Bearer\s+/i, "");
+
+  if (!token) {
+    req.user = undefined;
+    return next();
+  }
+
+  const session = sessions.get(token);
+  if (!session || session.expiresAt < Date.now()) {
+    if (session) sessions.delete(token);
+    req.user = undefined;
+    return next();
+  }
+
+  try {
+    const db = await getDbStore();
+    const user = await db.users.findById(session.userId);
+    if (!user) {
+      sessions.delete(token);
+      req.user = undefined;
+      return next();
+    }
+
+    req.user = {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+    };
+  } catch {
+    req.user = undefined;
+  }
+
+  next();
+}
+

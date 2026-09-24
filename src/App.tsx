@@ -22,6 +22,7 @@ export function App() {
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Check auth session
   useEffect(() => {
@@ -45,9 +46,6 @@ export function App() {
       // Ignore
     }
     setUser(null);
-    setCurrentView("dashboard");
-    setSelectedKitId(null);
-    setActiveKit(null);
   };
 
   const handleKitSelected = async (kitId: string) => {
@@ -79,7 +77,7 @@ export function App() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
-        <span className="text-sm font-medium">Initializing session...</span>
+        <span className="text-sm font-medium">Loading Interview Prep Kit...</span>
       </div>
     );
   }
@@ -91,6 +89,7 @@ export function App() {
         onLogout={handleLogout}
         onOpenCreateModal={() => setShowCreateModal(true)}
         onOpenBatchModal={() => setShowBatchModal(true)}
+        onOpenAuthModal={() => setShowAuthModal(true)}
         onGoHome={() => {
           setCurrentView("dashboard");
           setSelectedKitId(null);
@@ -99,9 +98,7 @@ export function App() {
       />
 
       <main className="flex-1">
-        {!user ? (
-          <AuthView onSuccess={(u) => setUser(u)} />
-        ) : currentView === "dashboard" ? (
+        {currentView === "dashboard" ? (
           <DashboardView
             onSelectKit={handleKitSelected}
             onOpenCreateModal={() => setShowCreateModal(true)}
@@ -127,6 +124,26 @@ export function App() {
           />
         ) : null}
       </main>
+
+      {/* Optional Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="relative max-w-md w-full">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white z-10 text-lg font-bold"
+            >
+              ✕
+            </button>
+            <AuthView
+              onSuccess={(u) => {
+                setUser(u);
+                setShowAuthModal(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <CreateKitModal

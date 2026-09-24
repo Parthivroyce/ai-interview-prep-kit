@@ -3,6 +3,7 @@ import { runCoverageTests } from "./coverage.test";
 import { runValidationTests } from "./validation.test";
 import { runRegenerationTests } from "./regeneration.test";
 import { runFingerprintAndSecurityTests } from "./fingerprint.test";
+import { runAuditEdgeCasesTests } from "./audit_edge_cases.test";
 
 async function main() {
   console.log("=========================================");
@@ -19,6 +20,8 @@ async function main() {
     runRegenerationTests();
     console.log();
     runFingerprintAndSecurityTests();
+    console.log();
+    await runAuditEdgeCasesTests();
     console.log();
 
     console.log("=========================================");

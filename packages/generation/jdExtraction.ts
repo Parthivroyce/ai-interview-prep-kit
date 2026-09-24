@@ -19,8 +19,8 @@ export async function extractJdRequirements(
 Analyze the following Job Description (JD).
 CRITICAL RULES:
 1. Requirements and responsibilities must be grounded STRICTLY in the provided text.
-2. DO NOT INVENT or extrapolate technologies, years of experience, tools, or frameworks not mentioned in the JD.
-3. If the JD is very short (e.g. 2 lines), return only what is explicitly written. A thin JD must produce a correspondingly thin set of requirements.
+2. DO NOT INVENT or extrapolate technologies, tools, databases, or frameworks (e.g., NEVER invent Kafka, Redis, AWS, Kubernetes, Docker, microservices, etc.) unless they explicitly appear in the JD text.
+3. If the JD is very short or thin (e.g. 1-2 lines), return only what is explicitly stated. A thin JD must produce a correspondingly thin set of requirements with NO generic embellishments.
 4. Categorize requirement 'kind' into exactly one of: "technical", "behavioural", "domain".
 5. Categorize requirement 'priority' into: "must" (core requirement) or "nice" (preferred, optional, plus).
 6. Assign stable IDs to requirements starting from r1, r2, r3, etc.

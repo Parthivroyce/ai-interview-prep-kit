@@ -100,4 +100,35 @@ export function runRegenerationTests(): void {
 
   console.log("  ✓ Regeneration preserves edited, pinned, and manual questions");
   console.log("  ✓ Regeneration does not affect un-targeted categories");
+
+  // PHASE 12 EXACT SCENARIO AUDIT:
+  // q1..q5 generated. Edit q3, pin q4, manual q6. Regenerate technical.
+  const phase12Questions: Question[] = [
+    { id: "q1", requirement_ids: ["r1"], category: "technical", prompt: "q1 prompt", answer_outline: "", difficulty: 1, _meta: { origin: "generated", edited: false, pinned: false } },
+    { id: "q2", requirement_ids: ["r1"], category: "technical", prompt: "q2 prompt", answer_outline: "", difficulty: 1, _meta: { origin: "generated", edited: false, pinned: false } },
+    { id: "q3", requirement_ids: ["r1"], category: "technical", prompt: "q3 prompt (EDITED)", answer_outline: "", difficulty: 2, _meta: { origin: "generated", edited: true, pinned: false } },
+    { id: "q4", requirement_ids: ["r1"], category: "technical", prompt: "q4 prompt (PINNED)", answer_outline: "", difficulty: 2, _meta: { origin: "generated", edited: false, pinned: true } },
+    { id: "q5", requirement_ids: ["r1"], category: "technical", prompt: "q5 prompt", answer_outline: "", difficulty: 1, _meta: { origin: "generated", edited: false, pinned: false } },
+    { id: "q6", requirement_ids: ["r1"], category: "technical", prompt: "q6 prompt (MANUAL)", answer_outline: "", difficulty: 3, _meta: { origin: "manual", edited: false, pinned: false } },
+  ];
+
+  const freshlyGenerated: Question[] = [
+    { id: "q_gen_a", requirement_ids: ["r1"], category: "technical", prompt: "fresh question A", answer_outline: "", difficulty: 2 },
+    { id: "q_gen_b", requirement_ids: ["r1"], category: "technical", prompt: "fresh question B", answer_outline: "", difficulty: 2 },
+  ];
+
+  const phase12Merged = mergeRegeneratedQuestions(phase12Questions, freshlyGenerated, "technical");
+
+  // Verify q3 survives
+  assert.ok(phase12Merged.some(q => q.id === "q3" && q.prompt === "q3 prompt (EDITED)"), "q3 (edited) must survive");
+  // Verify q4 survives
+  assert.ok(phase12Merged.some(q => q.id === "q4" && q._meta?.pinned === true), "q4 (pinned) must survive");
+  // Verify q6 survives
+  assert.ok(phase12Merged.some(q => q.id === "q6" && q._meta?.origin === "manual"), "q6 (manual) must survive");
+  // Verify untouched generated q1, q2, q5 were replaced
+  assert.ok(!phase12Merged.some(q => q.id === "q1"), "untouched q1 should be replaced");
+  assert.ok(!phase12Merged.some(q => q.id === "q2"), "untouched q2 should be replaced");
+  assert.ok(!phase12Merged.some(q => q.id === "q5"), "untouched q5 should be replaced");
+
+  console.log("  ✓ Phase 12 exact scenario passes: q3, q4, q6 survive and untouched questions are replaced");
 }

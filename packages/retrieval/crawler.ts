@@ -159,18 +159,45 @@ export class CompanyCrawler {
           continue;
         }
 
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+        let res: Response | null = null;
+        let lastFetchErr: any = null;
+        const maxFetchAttempts = 2;
+        let retryDelay = 300;
 
-        const res = await fetch(normalized, {
-          signal: controller.signal,
-          redirect: "follow",
-          headers: {
-            "User-Agent": "AIInterviewPrepKit/1.0 (Mozilla/5.0 Compatible Bot)",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-        });
-        clearTimeout(timer);
+        for (let attempt = 1; attempt <= maxFetchAttempts; attempt++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+
+          try {
+            res = await fetch(normalized, {
+              signal: controller.signal,
+              redirect: "follow",
+              headers: {
+                "User-Agent": "AIInterviewPrepKit/1.0 (Mozilla/5.0 Compatible Bot)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              },
+            });
+            clearTimeout(timer);
+
+            if (res.ok || (res.status >= 400 && res.status < 500)) {
+              // 2xx or client 4xx (e.g. 404) -> do not retry
+              break;
+            }
+          } catch (err: any) {
+            clearTimeout(timer);
+            lastFetchErr = err;
+          }
+
+          if (attempt < maxFetchAttempts) {
+            await new Promise(r => setTimeout(r, retryDelay));
+            retryDelay *= 2;
+          }
+        }
+
+        if (!res) {
+          errors.push(`Failed to fetch ${normalized} after ${maxFetchAttempts} attempts: ${lastFetchErr?.message || "Unknown error"}`);
+          continue;
+        }
 
         if (!res.ok) {
           errors.push(`HTTP ${res.status} for ${normalized}`);

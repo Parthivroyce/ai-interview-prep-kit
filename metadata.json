@@ -1,0 +1,6 @@
+{
+  "name": "AI Interview Prep Kit",
+  "description": "Deterministic multi-stage AI interview prep kit generator with web crawler, coverage verification engine, and practice scheduler.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

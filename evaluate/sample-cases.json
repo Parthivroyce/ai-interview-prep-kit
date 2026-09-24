@@ -1,0 +1,14 @@
+[
+  {
+    "id": "case-01",
+    "jd": "Senior Backend Engineer\n\nWe are looking for a senior backend engineer with experience in distributed systems, PostgreSQL query optimization, and high-throughput REST APIs. You will be designing reliable microservices and mentoring junior engineers.",
+    "company_url": "https://example.com",
+    "days": 5
+  },
+  {
+    "id": "case-02",
+    "jd": "Backend developer needed.\nExperience with APIs preferred.",
+    "company_url": "http://localhost:8099/acme/",
+    "days": 1
+  }
+]
